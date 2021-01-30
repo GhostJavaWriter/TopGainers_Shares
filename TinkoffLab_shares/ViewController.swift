@@ -16,6 +16,7 @@ class ViewController: UIViewController {
     @IBOutlet weak var companySymbolLabel: UILabel!
     @IBOutlet weak var priceLabel: UILabel!
     @IBOutlet weak var priceChangeLabel: UILabel!
+    @IBOutlet weak var logoImageView: UIImageView!
     
     //MARK: Private
     private lazy var companies = [
@@ -26,6 +27,40 @@ class ViewController: UIViewController {
         "Facebook" : "FB",
         "Iconix" : "ICON"
     ]
+    
+    private func requestLogo(for symbol: String) {
+        let token = "pk_6c24b6cc33d54294a13534407c85770a"
+        guard let logoUrl = URL(string: "https://cloud.iexapis.com/stable/stock/\(symbol)/logo?&token=\(token)") else { return
+        }
+        
+        let dataTask = URLSession.shared.dataTask(with: logoUrl) { [weak self] (data, response, error) in
+            
+            if let data = data, (response as? HTTPURLResponse)?.statusCode == 200, error == nil {
+                self?.getLogo(from: data)
+            } else {
+                print("Network error!")
+            }
+        }
+        
+        dataTask.resume()
+    }
+    
+    private func getLogo(from data: Data) {
+        do {
+            let jsonObject = try JSONSerialization.jsonObject(with: data)
+            guard
+                let json = jsonObject as? [String: Any],
+                let logo = json["url"] as? String else { return print("Invalid JSON") }
+            displayLogo(urlString: logo)
+        } catch {
+            print("JSON parsing error (request logo)")
+        }
+    }
+    
+    private func displayLogo(urlString: String) {
+        guard let url = URL(string: urlString) else { return print("wrong image URL")}
+        logoImageView.load(url: url)
+    }
     
     private func requestQuote(for symbol: String) {
         let token = "pk_6c24b6cc33d54294a13534407c85770a"
@@ -93,6 +128,7 @@ class ViewController: UIViewController {
         let selectedRow = companyPickerView.selectedRow(inComponent: 0)
         let selectedSymbol = Array(companies.values)[selectedRow]
         requestQuote(for: selectedSymbol)
+        requestLogo(for: selectedSymbol)
     }
     
     //MARK: - Lifecycle
@@ -133,3 +169,16 @@ extension ViewController: UIPickerViewDelegate {
     }
 }
 
+extension UIImageView {
+    func load(url: URL) {
+        DispatchQueue.global().async { [weak self] in
+            if let data = try? Data(contentsOf: url) {
+                if let image = UIImage(data: data) {
+                    DispatchQueue.main.async {
+                        self?.image = image
+                    }
+                }
+            }
+        }
+    }
+}
