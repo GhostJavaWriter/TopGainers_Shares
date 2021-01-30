@@ -7,9 +7,20 @@
 
 import UIKit
 
+struct Company: Codable {
+
+    var symbol : String
+    var companyName : String
+}
+
+struct Companies: Codable {
+    
+    var companies : [Company]
+}
+
 class ViewController: UIViewController {
 
-    //MARK: UI
+//MARK: - UI
     @IBOutlet weak var companyNameLabel: UILabel!
     @IBOutlet weak var companyPickerView: UIPickerView!
     @IBOutlet weak var activityIndicator: UIActivityIndicatorView!
@@ -18,15 +29,9 @@ class ViewController: UIViewController {
     @IBOutlet weak var priceChangeLabel: UILabel!
     @IBOutlet weak var logoImageView: UIImageView!
     
-    //MARK: Private
-    private lazy var companies = [
-        "Apple" : "AAPL",
-        "Microsoft" : "MSFT",
-        "Google" : "GOOG",
-        "Amazon" : "AMZN",
-        "Facebook" : "FB",
-        "Iconix" : "ICON"
-    ]
+//MARK: - Private
+    
+    private var companies : [Company]?
     
     private func requestLogo(for symbol: String) {
         let token = "pk_6c24b6cc33d54294a13534407c85770a"
@@ -75,7 +80,6 @@ class ViewController: UIViewController {
                 print("Network error!")
             }
         }
-        
         dataTask.resume()
     }
     
@@ -124,11 +128,45 @@ class ViewController: UIViewController {
         priceLabel.text = "-"
         priceChangeLabel.text = "-"
         priceChangeLabel.textColor = .black
+        logoImageView.image = UIImage(named: "defaultLogo")
         
         let selectedRow = companyPickerView.selectedRow(inComponent: 0)
-        let selectedSymbol = Array(companies.values)[selectedRow]
-        requestQuote(for: selectedSymbol)
-        requestLogo(for: selectedSymbol)
+        let selectedSymbol = companies?[selectedRow].symbol
+        
+        guard let selectedSymb = selectedSymbol else { return }
+        
+        requestQuote(for: selectedSymb)
+        requestLogo(for: selectedSymb)
+    }
+    
+    private func requestCompaniesList() {
+        let token = "pk_6c24b6cc33d54294a13534407c85770a"
+        guard let url = URL(string: "https://cloud.iexapis.com/stable/stock/market/list/gainers?&token=\(token)") else {
+            return
+        }
+        
+        let dataTask = URLSession.shared.dataTask(with: url) { [weak self] (data, response, error) in
+            if let data = data, (response as? HTTPURLResponse)?.statusCode == 200, error == nil {
+                self?.loadCompaniesList(from: data)
+                
+                DispatchQueue.main.async {
+                    self?.companyPickerView.reloadAllComponents()
+                    self?.requestQuoteUpdate()
+                }
+            } else {
+                print("Network error!")
+            }
+        }
+        dataTask.resume()
+    }
+    
+    private func loadCompaniesList(from data: Data) {
+        let decoder = JSONDecoder()
+        if let jsonData = try? decoder.decode([Company].self, from: data) {
+            companies = jsonData
+        } else {
+            print("json decode error")
+        }
     }
     
     //MARK: - Lifecycle
@@ -140,7 +178,7 @@ class ViewController: UIViewController {
         companyPickerView.delegate = self
         
         activityIndicator.hidesWhenStopped = true
-        
+        requestCompaniesList()
         requestQuoteUpdate()
     }
 }
@@ -153,7 +191,7 @@ extension ViewController: UIPickerViewDataSource {
     }
     
     func pickerView(_ pickerView: UIPickerView, numberOfRowsInComponent component: Int) -> Int {
-        return companies.keys.count
+        return companies?.count ?? 0
     }
 }
 
@@ -161,7 +199,7 @@ extension ViewController: UIPickerViewDataSource {
 extension ViewController: UIPickerViewDelegate {
     
     func pickerView(_ pickerView: UIPickerView, titleForRow row: Int, forComponent component: Int) -> String? {
-        return Array(companies.keys)[row]
+        return companies?[row].companyName
     }
     
     func pickerView(_ pickerView: UIPickerView, didSelectRow row: Int, inComponent component: Int) {
