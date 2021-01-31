@@ -6,6 +6,7 @@
 //
 
 import UIKit
+import Network
 
 struct Company: Codable {
 
@@ -28,14 +29,21 @@ class ViewController: UIViewController {
     @IBOutlet weak var priceLabel: UILabel!
     @IBOutlet weak var priceChangeLabel: UILabel!
     @IBOutlet weak var logoImageView: UIImageView!
+    @IBOutlet weak var networkErrorLabel: UILabel!
     
 //MARK: - Private
+    
+    private let monitor = NWPathMonitor()
     
     private var companies : [Company]?
     
     private func requestLogo(for symbol: String) {
         let token = "pk_6c24b6cc33d54294a13534407c85770a"
-        guard let logoUrl = URL(string: "https://cloud.iexapis.com/stable/stock/\(symbol)/logo?&token=\(token)") else { return
+        
+        guard let logoUrl = URL(string: "https://cloud.iexapis.com/stable/stock/\(symbol)/logo?&token=\(token)")
+        else {
+            //default logo. Nothing to show for user
+            return print("URL error : logo")
         }
         
         let dataTask = URLSession.shared.dataTask(with: logoUrl) { [weak self] (data, response, error) in
@@ -43,7 +51,7 @@ class ViewController: UIViewController {
             if let data = data, (response as? HTTPURLResponse)?.statusCode == 200, error == nil {
                 self?.getLogo(from: data)
             } else {
-                print("Network error!")
+                self?.showNetworkErrorMessage()
             }
         }
         
@@ -55,29 +63,38 @@ class ViewController: UIViewController {
             let jsonObject = try JSONSerialization.jsonObject(with: data)
             guard
                 let json = jsonObject as? [String: Any],
-                let logo = json["url"] as? String else { return print("Invalid JSON") }
+                let logo = json["url"] as? String
+            else {
+                //here we have default image logo. Nothing to show for user
+                return print("LOGO: Invalid JSON")
+            }
             displayLogo(urlString: logo)
         } catch {
-            print("JSON parsing error (request logo)")
+            showNetworkErrorMessage()
         }
     }
     
     private func displayLogo(urlString: String) {
-        guard let url = URL(string: urlString) else { return print("wrong image URL")}
+        guard let url = URL(string: urlString)
+        else {
+            //default image. Nothing to show for user
+            return print("wrong image URL")
+        }
         logoImageView.load(url: url)
     }
     
     private func requestQuote(for symbol: String) {
         let token = "pk_6c24b6cc33d54294a13534407c85770a"
         guard let url = URL(string: "https://cloud.iexapis.com/stable/stock/\(symbol)/quote?&token=\(token)") else {
-            return
+            showServerErrorMessage()
+            return print("requestQuote: url error")
         }
         
         let dataTask = URLSession.shared.dataTask(with: url) { [weak self] (data, response, error) in
             if let data = data, (response as? HTTPURLResponse)?.statusCode == 200, error == nil {
                 self?.parseQuote(from: data)
             } else {
-                print("Network error!")
+                self?.showServerErrorMessage()
             }
         }
         dataTask.resume()
@@ -91,7 +108,11 @@ class ViewController: UIViewController {
                 let companyName = json["companyName"] as? String,
                 let companySymbol = json["symbol"] as? String,
                 let price = json["latestPrice"] as? Double,
-                let priceChange = json["change"] as? Double else { return print("Invalid JSON") }
+                let priceChange = json["change"] as? Double
+            else {
+                showServerErrorMessage()
+                return print("ParseQuote: Invalid JSON")
+            }
             
             DispatchQueue.main.async { [weak self] in
                 self?.displayStockInfo(companyName: companyName,
@@ -100,6 +121,7 @@ class ViewController: UIViewController {
                                        priceChange: priceChange)
             }
         } catch {
+            showServerErrorMessage()
             print("JSON parsing error: " + error.localizedDescription)
         }
     }
@@ -133,7 +155,11 @@ class ViewController: UIViewController {
         let selectedRow = companyPickerView.selectedRow(inComponent: 0)
         let selectedSymbol = companies?[selectedRow].symbol
         
-        guard let selectedSymb = selectedSymbol else { return }
+        guard let selectedSymb = selectedSymbol
+        else {
+            showServerErrorMessage()
+            return
+        }
         
         requestQuote(for: selectedSymb)
         requestLogo(for: selectedSymb)
@@ -141,7 +167,9 @@ class ViewController: UIViewController {
     
     private func requestCompaniesList() {
         let token = "pk_6c24b6cc33d54294a13534407c85770a"
-        guard let url = URL(string: "https://cloud.iexapis.com/stable/stock/market/list/gainers?&token=\(token)") else {
+        guard let url = URL(string: "https://cloud.iexapis.com/stable/stock/market/list/gainers?&token=\(token)")
+        else {
+            showServerErrorMessage()
             return
         }
         
@@ -154,7 +182,7 @@ class ViewController: UIViewController {
                     self?.requestQuoteUpdate()
                 }
             } else {
-                print("Network error!")
+                self?.showServerErrorMessage()
             }
         }
         dataTask.resume()
@@ -165,7 +193,26 @@ class ViewController: UIViewController {
         if let jsonData = try? decoder.decode([Company].self, from: data) {
             companies = jsonData
         } else {
+            showServerErrorMessage()
             print("json decode error")
+        }
+    }
+    
+    private func showNetworkErrorMessage() {
+        DispatchQueue.main.async {
+            self.networkErrorLabel.text = "Network connection lost"
+            self.networkErrorLabel.textColor = .black
+            self.networkErrorLabel.isHidden = false
+        }
+    }
+    
+    private func showServerErrorMessage() {
+        DispatchQueue.main.async {
+            self.networkErrorLabel.textColor = .black
+            self.networkErrorLabel.text = "Server is not available, please try later..."
+            self.networkErrorLabel.textAlignment = .center
+            self.networkErrorLabel.numberOfLines = 0
+            self.networkErrorLabel.isHidden = false
         }
     }
     
@@ -178,8 +225,21 @@ class ViewController: UIViewController {
         companyPickerView.delegate = self
         
         activityIndicator.hidesWhenStopped = true
-        requestCompaniesList()
-        requestQuoteUpdate()
+        
+        monitor.pathUpdateHandler = { [weak self] path in
+            if path.status == .satisfied {
+                
+                DispatchQueue.main.async {
+                    self?.requestCompaniesList()
+                    self?.networkErrorLabel.isHidden = true
+                }
+                
+            } else {
+                self?.showNetworkErrorMessage()
+            }
+        }
+        let queue = DispatchQueue(label: "Monitor")
+        monitor.start(queue: queue)
     }
 }
 
@@ -215,7 +275,11 @@ extension UIImageView {
                     DispatchQueue.main.async {
                         self?.image = image
                     }
+                } else {
+                    print("Error: There is no image")
                 }
+            } else {
+                print("Error: There is no data")
             }
         }
     }
