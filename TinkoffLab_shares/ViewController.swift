@@ -30,6 +30,7 @@ class ViewController: UIViewController {
     @IBOutlet weak var priceChangeLabel: UILabel!
     @IBOutlet weak var logoImageView: UIImageView!
     @IBOutlet weak var networkErrorLabel: UILabel!
+    @IBOutlet weak var lastDatePriceLabel: UILabel!
     
 //MARK: - Private
     
@@ -108,7 +109,8 @@ class ViewController: UIViewController {
                 let companyName = json["companyName"] as? String,
                 let companySymbol = json["symbol"] as? String,
                 let price = json["latestPrice"] as? Double,
-                let priceChange = json["change"] as? Double
+                let priceChange = json["change"] as? Double,
+                let date = json["latestTime"] as? String
             else {
                 showServerErrorMessage()
                 return print("ParseQuote: Invalid JSON")
@@ -118,7 +120,8 @@ class ViewController: UIViewController {
                 self?.displayStockInfo(companyName: companyName,
                                        companySymbol: companySymbol,
                                        price: price,
-                                       priceChange: priceChange)
+                                       priceChange: priceChange,
+                                       date: date)
             }
         } catch {
             showServerErrorMessage()
@@ -129,11 +132,13 @@ class ViewController: UIViewController {
     private func displayStockInfo(companyName: String,
                                   companySymbol: String,
                                   price: Double,
-                                  priceChange: Double) {
+                                  priceChange: Double,
+                                  date: String) {
         activityIndicator.stopAnimating()
         companyNameLabel.text = companyName
         companySymbolLabel.text = companySymbol
         priceLabel.text = "\(price)"
+        lastDatePriceLabel.text = "Last price on \(date)"
         priceChangeLabel.text = "\(priceChange)"
         
         if priceChange < 0 {
@@ -201,7 +206,7 @@ class ViewController: UIViewController {
     private func showNetworkErrorMessage() {
         DispatchQueue.main.async {
             self.networkErrorLabel.text = "Network connection lost"
-            self.networkErrorLabel.textColor = .black
+            self.networkErrorLabel.textColor = .red
             self.networkErrorLabel.isHidden = false
         }
     }
